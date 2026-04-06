@@ -13,7 +13,7 @@ from jose import JWTError, jwt
 import bcrypt
 from sqlalchemy.orm import Session
 
-from database import SessionLocal, User, TestAttempt, init_db
+from database import SessionLocal, User, TestSession, TestAttempt, init_db
 
 # DATA_DIR: defaults to project root in dev, overridden to /app/data in Docker
 DATA_DIR     = Path(os.getenv("DATA_DIR", str(Path(__file__).parent.parent)))
@@ -142,18 +142,41 @@ def login(payload: dict, db: Session = Depends(get_db)):
 # ---------------------------------------------------------------------------
 
 @app.post("/api/stats/record")
-def record_attempt(payload: dict, user: dict = Depends(current_user), db: Session = Depends(get_db)):
-    """payload: { pdf_id, pdf_name, results: [{section_key,section_name,part,correct,total,timing:[{q,ms}]}] }"""
+def record_session(payload: dict, user: dict = Depends(current_user), db: Session = Depends(get_db)):
+    """
+    payload: {
+        pdf_id, pdf_name, mode, started_at (ISO string),
+        results: [{key, section, part, correct, total, timing:[{q,ms,correct}]}]
+    }
+    Creates one TestSession and links all part results to it.
+    """
+    user_id  = int(user["sub"])
     pdf_id   = payload.get("pdf_id", "")
     pdf_name = payload.get("pdf_name", "")
+    mode     = payload.get("mode", "regular")
     results  = payload.get("results", [])
-    user_id  = int(user["sub"])
+
+    started_str = payload.get("started_at")
+    try:
+        started_at = datetime.fromisoformat(started_str) if started_str else datetime.utcnow()
+    except Exception:
+        started_at = datetime.utcnow()
+
+    session = TestSession(
+        user_id      = user_id,
+        pdf_id       = pdf_id,
+        pdf_name     = pdf_name,
+        mode         = mode,
+        started_at   = started_at,
+        completed_at = datetime.utcnow(),
+    )
+    db.add(session)
+    db.flush()   # populate session.id before linking attempts
+
     for r in results:
         timing = r.get("timing")
         attempt = TestAttempt(
-            user_id      = user_id,
-            pdf_id       = pdf_id,
-            pdf_name     = pdf_name,
+            session_id   = session.id,
             section_key  = r.get("key", ""),
             section_name = r.get("section", ""),
             part_label   = r.get("part", ""),
@@ -162,47 +185,70 @@ def record_attempt(payload: dict, user: dict = Depends(current_user), db: Sessio
             timing_json  = json.dumps(timing, ensure_ascii=False) if timing else None,
         )
         db.add(attempt)
+
     db.commit()
     return {"ok": True}
 
 
 @app.get("/api/stats")
 def get_stats(user: dict = Depends(current_user), db: Session = Depends(get_db)):
-    user_id  = int(user["sub"])
-    attempts = (
-        db.query(TestAttempt)
-        .filter(TestAttempt.user_id == user_id)
-        .order_by(TestAttempt.completed_at.desc())
+    user_id = int(user["sub"])
+
+    sessions = (
+        db.query(TestSession)
+        .filter(TestSession.user_id == user_id)
+        .order_by(TestSession.completed_at.desc())
         .all()
     )
 
     by_test: dict[str, dict] = {}
-    for a in attempts:
-        if a.pdf_id not in by_test:
-            by_test[a.pdf_id] = {
-                "pdf_id":   a.pdf_id,
-                "pdf_name": a.pdf_name,
-                "attempts": [],
+    for s in sessions:
+        if s.pdf_id not in by_test:
+            by_test[s.pdf_id] = {
+                "pdf_id":   s.pdf_id,
+                "pdf_name": s.pdf_name,
+                "sessions": [],
             }
-        by_test[a.pdf_id]["attempts"].append({
-            "id":           a.id,
-            "section_name": a.section_name,
-            "part_label":   a.part_label,
-            "score":        a.score,
-            "total":        a.total,
-            "timing":       json.loads(a.timing_json) if a.timing_json else None,
-            "completed_at": a.completed_at.isoformat(),
+
+        attempts = (
+            db.query(TestAttempt)
+            .filter(TestAttempt.session_id == s.id)
+            .all()
+        )
+        session_score = sum(a.score for a in attempts)
+        session_total = sum(a.total for a in attempts)
+
+        by_test[s.pdf_id]["sessions"].append({
+            "id":           s.id,
+            "mode":         s.mode,
+            "started_at":   s.started_at.isoformat() if s.started_at else None,
+            "completed_at": s.completed_at.isoformat(),
+            "score":        session_score,
+            "total":        session_total,
+            "attempts": [
+                {
+                    "id":           a.id,
+                    "section_name": a.section_name,
+                    "part_label":   a.part_label,
+                    "score":        a.score,
+                    "total":        a.total,
+                    "timing":       json.loads(a.timing_json) if a.timing_json else None,
+                }
+                for a in attempts
+            ],
         })
 
-    total_score    = sum(a.score for a in attempts)
-    total_possible = sum(a.total for a in attempts)
+    all_scores   = [s["score"] for t in by_test.values() for s in t["sessions"]]
+    all_totals   = [s["total"] for t in by_test.values() for s in t["sessions"]]
+    total_score  = sum(all_scores)
+    total_possible = sum(all_totals)
 
     return {
-        "username":      user["username"],
-        "total_attempts":len(attempts),
-        "total_score":   total_score,
-        "total_possible":total_possible,
-        "tests":         list(by_test.values()),
+        "username":          user["username"],
+        "total_sessions":    len(sessions),
+        "total_score":       total_score,
+        "total_possible":    total_possible,
+        "tests":             list(by_test.values()),
         "completed_pdf_ids": list(by_test.keys()),
     }
 

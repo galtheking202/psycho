@@ -780,8 +780,52 @@ html, body {
 .stats-test-chevron { color: var(--gray-400); font-size: 12px; transition: transform .2s; }
 .stats-test-header.open .stats-test-chevron { transform: rotate(180deg); }
 
+/* Session rows (level 2 accordion) */
+.stats-sessions-list {
+  padding: 8px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.stats-session-block {
+  border: 1px solid var(--gray-200);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+.stats-session-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  cursor: pointer;
+  user-select: none;
+  transition: background .15s;
+}
+.stats-session-header:hover { background: #f8fafc; }
+.stats-session-header.open .stats-test-chevron { transform: rotate(180deg); }
+.session-mode-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 20px;
+  white-space: nowrap;
+}
+.session-mode-simulation { background: #eff6ff; color: #1d4ed8; }
+.session-mode-regular    { background: #f0fdf4; color: #15803d; }
+.session-date { font-size: 12px; color: var(--gray-500); flex: 1; }
+.session-score {
+  font-size: 13px;
+  font-weight: 700;
+  direction: ltr;
+  white-space: nowrap;
+}
+.session-score.good { color: var(--green); }
+.session-score.ok   { color: var(--gold); }
+.session-score.bad  { color: var(--red); }
+
 .stats-attempts-list {
-  padding: 10px 18px 14px;
+  padding: 8px 14px 12px;
   display: flex;
   flex-direction: column;
   gap: 6px;

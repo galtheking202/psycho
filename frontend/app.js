@@ -11,6 +11,10 @@ const state = {
   userAnswers: {},
   graded:     false,
 
+  // Session tracking
+  sessionStartedAt: null,   // ISO string, set when test becomes ready to answer
+  sessionMode:      "regular", // "simulation" | "regular"
+
   // Simulation
   simMode:         false,   // toggle is on
   simActive:       false,   // a simulation session is running
@@ -156,11 +160,15 @@ async function loadPdf(id) {
     const key = await api(`/api/pdf/${encodeURIComponent(id)}/answers`);
     state.answerKey = key;
     panelLoading.classList.add("hidden");
-    simToggle.disabled = false;      // enable sim button now that key is ready
+    simToggle.disabled = false;
 
     if (state.simMode) {
+      state.sessionMode       = "simulation";
+      state.sessionStartedAt  = new Date().toISOString();
       startSim();
     } else {
+      state.sessionMode       = "regular";
+      state.sessionStartedAt  = new Date().toISOString();
       buildFullPanel(key);
       updateProgress();
       gradeBtn.disabled = false;
@@ -188,10 +196,12 @@ simToggle.addEventListener("click", () => {
   simToggle.classList.toggle("active", state.simMode);
 
   if (state.simMode) {
-    console.log("[sim] starting simulation…");
+    state.sessionMode      = "simulation";
+    state.sessionStartedAt = new Date().toISOString();
     startSim();
   } else {
-    console.log("[sim] returning to practice mode");
+    state.sessionMode      = "regular";
+    state.sessionStartedAt = new Date().toISOString();
     buildFullPanel(state.answerKey);
     updateProgress();
     gradeBtn.disabled = false;
@@ -628,9 +638,11 @@ async function recordStats(data) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      pdf_id:   state.pdfId,
-      pdf_name: pdfName,
-      results:  resultsWithTiming,
+      pdf_id:     state.pdfId,
+      pdf_name:   pdfName,
+      mode:       state.sessionMode,
+      started_at: state.sessionStartedAt,
+      results:    resultsWithTiming,
     }),
   });
   refreshPdfSelect().catch(() => {});
@@ -1280,7 +1292,7 @@ async function renderStatsPage() {
   }
 
   const avgPct = stats.total_possible > 0
-    ? Math.round((stats.total_correct / stats.total_possible) * 100)
+    ? Math.round((stats.total_score / stats.total_possible) * 100)
     : 0;
 
   let html = `
@@ -1290,15 +1302,15 @@ async function renderStatsPage() {
         <div class="stat-card-lbl">מבחנים</div>
       </div>
       <div class="stat-card">
-        <div class="stat-card-val">${stats.total_attempts}</div>
-        <div class="stat-card-lbl">פרקים שהושלמו</div>
+        <div class="stat-card-val">${stats.total_sessions}</div>
+        <div class="stat-card-lbl">ניסיונות</div>
       </div>
       <div class="stat-card">
         <div class="stat-card-val">${avgPct}%</div>
         <div class="stat-card-lbl">ממוצע כללי</div>
       </div>
       <div class="stat-card">
-        <div class="stat-card-val">${stats.total_correct}/${stats.total_possible}</div>
+        <div class="stat-card-val">${stats.total_score}/${stats.total_possible}</div>
         <div class="stat-card-lbl">סה"כ נכון/אפשרי</div>
       </div>
     </div>`;
@@ -1307,34 +1319,57 @@ async function renderStatsPage() {
     html += `<div class="stats-empty">טרם הושלמו מבחנים</div>`;
   } else {
     stats.tests.forEach((test, ti) => {
-      const testTotal   = test.attempts.reduce((s, a) => s + a.total,   0);
-      const testCorrect = test.attempts.reduce((s, a) => s + a.score, 0);
+      const testCorrect = test.sessions.reduce((s, sess) => s + sess.score, 0);
+      const testTotal   = test.sessions.reduce((s, sess) => s + sess.total,  0);
       const testPct     = testTotal > 0 ? Math.round(testCorrect / testTotal * 100) : 0;
 
       html += `
         <div class="stats-test-block">
           <div class="stats-test-header" data-ti="${ti}">
             <span class="stats-test-name">${esc(test.pdf_name)}</span>
-            <span class="stats-test-meta">${test.attempts.length} פרקים · ${testCorrect}/${testTotal} (${testPct}%)</span>
+            <span class="stats-test-meta">${test.sessions.length} ניסיונות · ${testCorrect}/${testTotal} (${testPct}%)</span>
             <span class="stats-test-chevron">▼</span>
           </div>
-          <div class="stats-attempts-list" id="stats-test-${ti}" style="display:none">`;
+          <div class="stats-sessions-list" id="stats-test-${ti}" style="display:none">`;
 
-      test.attempts.forEach(a => {
-        const pct  = a.total > 0 ? a.score / a.total : 0;
-        const cls  = pct >= 0.6 ? "good" : pct >= 0.4 ? "ok" : "bad";
-        const date = new Date(a.completed_at).toLocaleDateString("he-IL");
-        const chartBtn = a.timing
-          ? `<button class="attempt-chart-btn" data-timing='${esc(JSON.stringify(a.timing))}' data-label="${esc(a.section_name + " — " + a.part_label)}">📊</button>`
+      test.sessions.forEach((sess, si) => {
+        const sessPct  = sess.total > 0 ? Math.round(sess.score / sess.total * 100) : 0;
+        const sessCls  = sessPct >= 60 ? "good" : sessPct >= 40 ? "ok" : "bad";
+        const modeLabel = sess.mode === "simulation" ? "סימולציה" : "בדיקה רגילה";
+        const startDate = sess.started_at
+          ? new Date(sess.started_at).toLocaleDateString("he-IL")
+          : new Date(sess.completed_at).toLocaleDateString("he-IL");
+        const startTime = sess.started_at
+          ? new Date(sess.started_at).toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" })
           : "";
+        const sessionId = `stats-test-${ti}-sess-${si}`;
+
         html += `
-          <div class="stats-attempt-row">
-            <span class="attempt-section">${esc(a.section_name)}</span>
-            <span class="attempt-part">${esc(a.part_label)}</span>
-            <span class="attempt-score ${cls}">${a.score}/${a.total}</span>
-            <span class="attempt-date">${date}</span>
-            ${chartBtn}
-          </div>`;
+          <div class="stats-session-block">
+            <div class="stats-session-header" data-sid="${sessionId}">
+              <span class="session-mode-badge session-mode-${sess.mode}">${modeLabel}</span>
+              <span class="session-date">${startDate}${startTime ? " · " + startTime : ""}</span>
+              <span class="session-score ${sessCls}">${sess.score}/${sess.total} (${sessPct}%)</span>
+              <span class="stats-test-chevron">▼</span>
+            </div>
+            <div class="stats-attempts-list" id="${sessionId}" style="display:none">`;
+
+        sess.attempts.forEach(a => {
+          const pct  = a.total > 0 ? a.score / a.total : 0;
+          const cls  = pct >= 0.6 ? "good" : pct >= 0.4 ? "ok" : "bad";
+          const chartBtn = a.timing
+            ? `<button class="attempt-chart-btn" data-timing='${esc(JSON.stringify(a.timing))}' data-label="${esc(a.section_name + " — " + a.part_label)}">📊</button>`
+            : "";
+          html += `
+            <div class="stats-attempt-row">
+              <span class="attempt-section">${esc(a.section_name)}</span>
+              <span class="attempt-part">${esc(a.part_label)}</span>
+              <span class="attempt-score ${cls}">${a.score}/${a.total}</span>
+              ${chartBtn}
+            </div>`;
+        });
+
+        html += `</div></div>`;
       });
 
       html += `</div></div>`;
@@ -1343,11 +1378,22 @@ async function renderStatsPage() {
 
   statsBody.innerHTML = html;
 
-  // Accordion toggle
+  // Test accordion toggle
   statsBody.querySelectorAll(".stats-test-header").forEach(hdr => {
     hdr.addEventListener("click", () => {
       const ti   = hdr.dataset.ti;
       const list = $(`stats-test-${ti}`);
+      const open = list.style.display !== "none";
+      list.style.display = open ? "none" : "flex";
+      hdr.classList.toggle("open", !open);
+    });
+  });
+
+  // Session accordion toggle
+  statsBody.querySelectorAll(".stats-session-header").forEach(hdr => {
+    hdr.addEventListener("click", () => {
+      const sid  = hdr.dataset.sid;
+      const list = document.getElementById(sid);
       const open = list.style.display !== "none";
       list.style.display = open ? "none" : "flex";
       hdr.classList.toggle("open", !open);
