@@ -600,16 +600,38 @@ function showResults(data) {
 
 async function recordStats(data) {
   const pdfName = state.answerKey?.name || state.pdfId;
+
+  // Build timing array per slot from answerLog
+  const timingBySlot = {};
+  state.answerLog.forEach(e => {
+    if (!timingBySlot[e.slot]) timingBySlot[e.slot] = [];
+    timingBySlot[e.slot].push(e);
+  });
+
+  const resultsWithTiming = data.results.map(r => {
+    const log = (timingBySlot[r.slot] || [])
+      .slice()
+      .sort((a, b) => a.partElapsed_ms - b.partElapsed_ms);
+
+    const timing = log.length
+      ? log.map((e, i) => ({
+          q:  e.q,
+          ms: e.partElapsed_ms - (i === 0 ? 0 : log[i - 1].partElapsed_ms),
+        }))
+      : null;
+
+    return { ...r, timing };
+  });
+
   await apiAuth("/api/stats/record", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       pdf_id:   state.pdfId,
       pdf_name: pdfName,
-      results:  data.results,
+      results:  resultsWithTiming,
     }),
   });
-  // Refresh dropdown to show ✓ mark
   refreshPdfSelect().catch(() => {});
 }
 
@@ -1294,15 +1316,19 @@ async function renderStatsPage() {
           <div class="stats-attempts-list" id="stats-test-${ti}" style="display:none">`;
 
       test.attempts.forEach(a => {
-        const pct   = a.total > 0 ? a.score / a.total : 0;
-        const cls   = pct >= 0.6 ? "good" : pct >= 0.4 ? "ok" : "bad";
-        const date  = new Date(a.completed_at).toLocaleDateString("he-IL");
+        const pct  = a.total > 0 ? a.score / a.total : 0;
+        const cls  = pct >= 0.6 ? "good" : pct >= 0.4 ? "ok" : "bad";
+        const date = new Date(a.completed_at).toLocaleDateString("he-IL");
+        const chartBtn = a.timing
+          ? `<button class="attempt-chart-btn" data-timing='${esc(JSON.stringify(a.timing))}' data-label="${esc(a.section_name + " — " + a.part_label)}">📊</button>`
+          : "";
         html += `
           <div class="stats-attempt-row">
             <span class="attempt-section">${esc(a.section_name)}</span>
             <span class="attempt-part">${esc(a.part_label)}</span>
             <span class="attempt-score ${cls}">${a.score}/${a.total}</span>
             <span class="attempt-date">${date}</span>
+            ${chartBtn}
           </div>`;
       });
 
@@ -1323,34 +1349,18 @@ async function renderStatsPage() {
     });
   });
 
-  // Timing section — shown only when current session has sim data
-  if (state.answerLog.length > 0) {
-    const sections = [...new Set(state.answerLog.map(e => e.sectionName))];
-
-    const timingBlock = document.createElement("div");
-    timingBlock.className = "stats-timing-block";
-    timingBlock.innerHTML = `
-      <div class="stats-timing-title">גרף זמנים — הפעלה נוכחית</div>
-      <div class="stats-timing-cards" id="stats-timing-cards"></div>
-    `;
-    statsBody.appendChild(timingBlock);
-
-    const cardsEl = timingBlock.querySelector("#stats-timing-cards");
-    sections.forEach(sectionName => {
-      const card = document.createElement("div");
-      card.className = "stats-timing-card";
-      card.innerHTML = `
-        <div class="stats-timing-card-icon">📊</div>
-        <div class="stats-timing-card-label">${esc(sectionName)}</div>
-        <div class="stats-timing-card-hint">לחץ לגרף</div>
-      `;
-      card.addEventListener("click", () => {
-        statsOverlay.classList.add("hidden");
-        openSectionChart(sectionName);
-      });
-      cardsEl.appendChild(card);
+  // Chart buttons inside attempt rows
+  statsBody.querySelectorAll(".attempt-chart-btn").forEach(btn => {
+    btn.addEventListener("click", e => {
+      e.stopPropagation();
+      const timing = JSON.parse(btn.dataset.timing);
+      const label  = btn.dataset.label;
+      chartTitleEl.textContent = label;
+      statsOverlay.classList.add("hidden");
+      chartOverlay.classList.remove("hidden");
+      requestAnimationFrame(() => drawSvgChart(timing));
     });
-  }
+  });
 }
 
 // ---------------------------------------------------------------------------

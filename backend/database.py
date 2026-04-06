@@ -40,6 +40,7 @@ class TestAttempt(Base):
     part_label   = Column(String, nullable=False)
     score        = Column(Integer, nullable=False)
     total        = Column(Integer, nullable=False)
+    timing_json  = Column(String, nullable=True)   # JSON array [{q,ms}, ...]
     completed_at = Column(DateTime, default=datetime.utcnow)
 
 

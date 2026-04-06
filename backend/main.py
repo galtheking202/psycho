@@ -143,12 +143,13 @@ def login(payload: dict, db: Session = Depends(get_db)):
 
 @app.post("/api/stats/record")
 def record_attempt(payload: dict, user: dict = Depends(current_user), db: Session = Depends(get_db)):
-    """payload: { pdf_id, pdf_name, results: [{section_key,section_name,part,correct,total}] }"""
+    """payload: { pdf_id, pdf_name, results: [{section_key,section_name,part,correct,total,timing:[{q,ms}]}] }"""
     pdf_id   = payload.get("pdf_id", "")
     pdf_name = payload.get("pdf_name", "")
     results  = payload.get("results", [])
     user_id  = int(user["sub"])
     for r in results:
+        timing = r.get("timing")
         attempt = TestAttempt(
             user_id      = user_id,
             pdf_id       = pdf_id,
@@ -158,6 +159,7 @@ def record_attempt(payload: dict, user: dict = Depends(current_user), db: Sessio
             part_label   = r.get("part", ""),
             score        = r.get("correct", 0),
             total        = r.get("total", 0),
+            timing_json  = json.dumps(timing, ensure_ascii=False) if timing else None,
         )
         db.add(attempt)
     db.commit()
@@ -188,6 +190,7 @@ def get_stats(user: dict = Depends(current_user), db: Session = Depends(get_db))
             "part_label":   a.part_label,
             "score":        a.score,
             "total":        a.total,
+            "timing":       json.loads(a.timing_json) if a.timing_json else None,
             "completed_at": a.completed_at.isoformat(),
         })
 

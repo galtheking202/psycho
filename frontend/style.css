@@ -809,6 +809,19 @@ html, body {
 .attempt-score.bad   { color: var(--red);   }
 .attempt-date { font-size: 11px; color: var(--gray-400); white-space: nowrap; }
 
+.attempt-chart-btn {
+  background: none;
+  border: 1px solid var(--gray-200);
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+  flex-shrink: 0;
+  line-height: 1.4;
+}
+.attempt-chart-btn:hover { background: #eff6ff; border-color: var(--blue); }
+
 .stats-empty {
   text-align: center;
   color: var(--gray-400);
