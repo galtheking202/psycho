@@ -1004,13 +1004,7 @@ function renderPsychoScores(gradeData) {
   const scores = calculatePsychoScores(gradeData);
   if (!scores) { el.classList.add("hidden"); return; }
 
-  const topicCards = scores.topics.map(t => `
-    <div class="psych-topic-card">
-      <div class="psych-topic-label">${esc(t.label)}</div>
-      <div class="psych-topic-raw">${t.correct}/${t.total} נכון</div>
-      <div class="psych-topic-uniform">${t.uniform}</div>
-      <div class="psych-topic-uniform-lbl">ציון אחיד</div>
-    </div>`).join("");
+  const hasTimingData = state.answerLog.length > 0;
 
   const compositeRows = scores.composites.map(c => `
     <div class="psych-composite-row">
@@ -1022,7 +1016,7 @@ function renderPsychoScores(gradeData) {
 
   el.innerHTML = `
     <div class="psych-section-title">ציון פסיכומטרי מוערך</div>
-    <div class="psych-topics">${topicCards}</div>
+    <div class="psych-topics" id="psych-topics-row"></div>
     <div class="psych-composites">
       <div class="psych-comp-header">
         <span>סוג ציון</span><span>ציון משוקלל</span><span></span><span>אומדן תוצאה</span>
@@ -1031,7 +1025,54 @@ function renderPsychoScores(gradeData) {
     </div>
     <p class="psych-disclaimer">* הציונים הם אומדן בלבד ועשויים להשתנות בהתאם לנורמות המבחן הספציפי</p>
   `;
+
+  const topicsRow = $("psych-topics-row");
+  scores.topics.forEach(t => {
+    const card = document.createElement("div");
+    card.className = "psych-topic-card" + (hasTimingData ? " psych-topic-card--clickable" : "");
+    card.innerHTML = `
+      <div class="psych-topic-label">${esc(t.label)}</div>
+      <div class="psych-topic-raw">${t.correct}/${t.total} נכון</div>
+      <div class="psych-topic-uniform">${t.uniform}</div>
+      <div class="psych-topic-uniform-lbl">ציון אחיד</div>
+      ${hasTimingData ? '<div class="psych-topic-chart-hint">📊 גרף זמנים</div>' : ''}
+    `;
+    if (hasTimingData) {
+      card.addEventListener("click", () => openSectionChart(t.label));
+    }
+    topicsRow.appendChild(card);
+  });
+
   el.classList.remove("hidden");
+}
+
+function openSectionChart(sectionName) {
+  const sectionLog = state.answerLog.filter(e => e.sectionName === sectionName);
+  if (!sectionLog.length) return;
+
+  // Group by partIdx, compute per-question times within each part
+  const byPart = {};
+  sectionLog.forEach(e => {
+    if (!byPart[e.partIdx]) byPart[e.partIdx] = [];
+    byPart[e.partIdx].push(e);
+  });
+  Object.values(byPart).forEach(log => log.sort((a, b) => Number(a.q) - Number(b.q)));
+
+  // Build flat times array ordered by part then question
+  const times = [];
+  Object.keys(byPart).sort((a, b) => Number(a) - Number(b)).forEach(pidx => {
+    const log = byPart[pidx].slice().sort((a, b) => a.partElapsed_ms - b.partElapsed_ms);
+    const partLabel = state.simParts[Number(pidx)]?.partLabel || `פרק ${Number(pidx) + 1}`;
+    const shortPart = partLabel.includes("ראשון") ? "א" : partLabel.includes("שני") ? "ב" : String(Number(pidx) + 1);
+    log.forEach((e, i) => {
+      const prev = i === 0 ? 0 : log[i - 1].partElapsed_ms;
+      times.push({ q: `${shortPart}${e.q}`, ms: e.partElapsed_ms - prev });
+    });
+  });
+
+  chartTitleEl.textContent = `${sectionName} — גרף זמנים לפי שאלה`;
+  chartOverlay.classList.remove("hidden");
+  requestAnimationFrame(() => drawSvgChart(times));
 }
 
 // ---------------------------------------------------------------------------

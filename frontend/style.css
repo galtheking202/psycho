@@ -492,6 +492,25 @@ html, body {
   color: var(--gray-400);
 }
 
+.psych-topic-card--clickable {
+  cursor: pointer;
+  transition: transform .15s, box-shadow .15s, border-color .15s;
+  border-color: var(--blue);
+}
+.psych-topic-card--clickable:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 6px 20px rgba(29,78,216,.18);
+  background: #eff6ff;
+}
+
+.psych-topic-chart-hint {
+  font-size: 10px;
+  color: var(--blue);
+  margin-top: 4px;
+  font-weight: 600;
+  opacity: .75;
+}
+
 /* Composite rows */
 .psych-composites {
   display: flex;
