@@ -615,8 +615,9 @@ async function recordStats(data) {
 
     const timing = log.length
       ? log.map((e, i) => ({
-          q:  e.q,
-          ms: e.partElapsed_ms - (i === 0 ? 0 : log[i - 1].partElapsed_ms),
+          q:       e.q,
+          ms:      e.partElapsed_ms - (i === 0 ? 0 : log[i - 1].partElapsed_ms),
+          correct: r.details?.[e.q]?.is_correct ?? null,
         }))
       : null;
 
@@ -816,13 +817,16 @@ function drawSvgChart(times) {
   svg.appendChild(avgLbl);
 
   // Bars
-  times.forEach(({ q, ms }, i) => {
-    const barH  = Math.max(2, (ms / niceMax) * plotH);
-    const x     = PAD.left + gap + i * (barW + gap);
-    const y     = PAD.top + plotH - barH;
-    const color = ms > avgMs * 1.8 ? "#ef4444" : ms > avgMs * 1.2 ? "#f59e0b" : "#3b82f6";
+  times.forEach(({ q, ms, correct }, i) => {
+    const barH = Math.max(2, (ms / niceMax) * plotH);
+    const x    = PAD.left + gap + i * (barW + gap);
+    const y    = PAD.top + plotH - barH;
 
-    // Bar rect (animated via CSS height trick — use transform instead)
+    // Color: green = correct, red = wrong, gray = no data
+    const color = correct === true  ? "#16a34a"
+                : correct === false ? "#dc2626"
+                : "#94a3b8";
+
     const rect = el("rect", {
       x, y, width: barW, height: barH,
       fill: color, rx: 3,
@@ -832,7 +836,7 @@ function drawSvgChart(times) {
     });
 
     // Hover events
-    rect.addEventListener("mouseenter", (ev) => showTooltip(ev, q, ms));
+    rect.addEventListener("mouseenter", (ev) => showTooltip(ev, q, ms, correct));
     rect.addEventListener("mousemove",  (ev) => moveTooltip(ev));
     rect.addEventListener("mouseleave", () => hideTooltip());
 
@@ -873,8 +877,9 @@ function niceNumber(ms) {
   return nice * magnitude * 1.1; // 10% headroom
 }
 
-function showTooltip(ev, q, ms) {
-  chartTooltip.textContent = `שאלה ${q}: ${fmtMs(ms)}`;
+function showTooltip(ev, q, ms, correct) {
+  const status = correct === true ? " ✓" : correct === false ? " ✗" : "";
+  chartTooltip.textContent = `שאלה ${q}: ${Math.round(ms / 1000)} שניות${status}`;
   chartTooltip.classList.remove("hidden");
   moveTooltip(ev);
 }
