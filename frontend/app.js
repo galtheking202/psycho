@@ -575,6 +575,7 @@ function showResults(data) {
     </div>
   `).join("");
 
+  renderPsychoScores(data);
   resultsOverlay.classList.remove("hidden");
 
   // Save stats if logged in
