@@ -10,7 +10,7 @@ from fastapi import FastAPI, HTTPException, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from jose import JWTError, jwt
-from passlib.context import CryptContext
+import bcrypt
 from sqlalchemy.orm import Session
 
 from database import SessionLocal, User, TestAttempt, init_db
@@ -24,7 +24,11 @@ SECRET_KEY = "psycho-app-dev-secret-change-in-production"
 ALGORITHM  = "HS256"
 TOKEN_DAYS = 30
 
-pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
+def _hash_pw(password: str) -> str:
+    return bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
+
+def _verify_pw(plain: str, hashed: str) -> bool:
+    return bcrypt.checkpw(plain.encode(), hashed.encode())
 
 app = FastAPI(title="Psychometric Test App")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -116,7 +120,7 @@ def register(payload: dict, db: Session = Depends(get_db)):
         raise HTTPException(400, "סיסמה חייבת להכיל לפחות 4 תווים")
     if db.query(User).filter(User.username == username).first():
         raise HTTPException(409, "שם משתמש כבר קיים")
-    user = User(username=username, password_hash=pwd_ctx.hash(password))
+    user = User(username=username, password_hash=_hash_pw(password))
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -128,7 +132,7 @@ def login(payload: dict, db: Session = Depends(get_db)):
     username = (payload.get("username") or "").strip()
     password = payload.get("password") or ""
     user = db.query(User).filter(User.username == username).first()
-    if not user or not pwd_ctx.verify(password, user.password_hash):
+    if not user or not _verify_pw(password, user.password_hash):
         raise HTTPException(401, "שם משתמש או סיסמה שגויים")
     return {"token": make_token(user.id, user.username), "username": user.username}
 
