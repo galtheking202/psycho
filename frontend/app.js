@@ -537,6 +537,9 @@ function applyGradeToPanel(data) {
         `.question-row[data-slot="${CSS.escape(res.slot)}"][data-q="${qNum}"]`
       );
       if (!row) return;
+
+      const unanswered = detail.given === null || detail.given === undefined;
+
       row.querySelectorAll(".opt-btn").forEach((btn) => {
         btn.disabled = true;
         const v = btn.dataset.val;
@@ -545,6 +548,17 @@ function applyGradeToPanel(data) {
         else if (!detail.is_correct && v === detail.given)        btn.classList.add("grade-wrong");
         else if (!detail.is_correct && v === detail.correct)      btn.classList.add("grade-show-correct");
       });
+
+      // Mark unanswered rows distinctly
+      if (unanswered) {
+        row.classList.add("question-row--unanswered");
+        if (!row.querySelector(".q-unanswered-tag")) {
+          const tag = document.createElement("span");
+          tag.className   = "q-unanswered-tag";
+          tag.textContent = "לא נענה";
+          row.appendChild(tag);
+        }
+      }
     });
   });
 }

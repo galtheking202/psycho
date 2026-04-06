@@ -337,6 +337,26 @@ html, body {
 
 .opt-btn:disabled { cursor: default; }
 
+/* Unanswered question row */
+.question-row--unanswered {
+  background: #fffbeb;
+  border-inline-start: 3px solid var(--gold);
+}
+.question-row--unanswered:hover { background: #fef3c7; }
+
+.q-unanswered-tag {
+  margin-inline-start: auto;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--gold);
+  background: var(--gold-bg);
+  border: 1px solid var(--gold);
+  border-radius: 10px;
+  padding: 2px 7px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 /* =====================================================================
    Results overlay
    ===================================================================== */
