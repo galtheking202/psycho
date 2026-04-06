@@ -851,6 +851,189 @@ function fmtMs(ms) {
 }
 
 // ---------------------------------------------------------------------------
+// Psychometric score calculation
+// ---------------------------------------------------------------------------
+
+// Source: "טבלת מעבר מציוני גלם לציונים בסולם האחיד" (correct_answers_to_score.png)
+// Index = raw score (number correct). Value = [english, quantitative, verbal].
+// null = that raw score is not achievable for that topic.
+const RAW_TO_UNIFORM = [
+  /* 0 */  [50,  50,  50 ],
+  /* 1 */  [52,  52,  51 ],
+  /* 2 */  [54,  54,  52 ],
+  /* 3 */  [56,  56,  53 ],
+  /* 4 */  [58,  58,  54 ],
+  /* 5 */  [60,  60,  56 ],
+  /* 6 */  [62,  62,  58 ],
+  /* 7 */  [63,  65,  60 ],
+  /* 8 */  [65,  67,  62 ],
+  /* 9 */  [66,  70,  64 ],
+  /* 10 */ [68,  72,  66 ],
+  /* 11 */ [70,  75,  68 ],
+  /* 12 */ [73,  77,  70 ],
+  /* 13 */ [75,  80,  73 ],
+  /* 14 */ [78,  82,  75 ],
+  /* 15 */ [80,  85,  77 ],
+  /* 16 */ [83,  88,  79 ],
+  /* 17 */ [85,  91,  81 ],
+  /* 18 */ [88,  93,  84 ],
+  /* 19 */ [90,  96,  86 ],
+  /* 20 */ [93,  99,  88 ],
+  /* 21 */ [95,  102, 91 ],
+  /* 22 */ [98,  105, 93 ],
+  /* 23 */ [100, 108, 96 ],
+  /* 24 */ [103, 111, 98 ],
+  /* 25 */ [105, 114, 101],
+  /* 26 */ [107, 117, 103],
+  /* 27 */ [110, 120, 105],
+  /* 28 */ [112, 122, 108],
+  /* 29 */ [115, 125, 110],
+  /* 30 */ [117, 128, 112],
+  /* 31 */ [119, 131, 114],
+  /* 32 */ [122, 133, 117],
+  /* 33 */ [124, 136, 119],
+  /* 34 */ [127, 138, 122],
+  /* 35 */ [129, 141, 124],
+  /* 36 */ [132, 143, 126],
+  /* 37 */ [134, 145, 129],
+  /* 38 */ [137, 146, 131],
+  /* 39 */ [139, 148, 134],
+  /* 40 */ [142, 150, 136],
+  /* 41 */ [144, null,138],
+  /* 42 */ [146, null,141],
+  /* 43 */ [148, null,143],
+  /* 44 */ [150, null,146],
+  /* 45 */ [null,null,148],
+  /* 46 */ [null,null,150],
+];
+
+// [weighted_min, weighted_max, result_min, result_max]
+// Source: score_to_test_result.png
+const WEIGHTED_BANDS = [
+  [50,  50,  200, 200],
+  [51,  55,  221, 248],
+  [56,  60,  249, 276],
+  [61,  65,  277, 304],
+  [66,  70,  305, 333],
+  [71,  75,  334, 361],
+  [76,  80,  362, 389],
+  [81,  85,  390, 418],
+  [86,  90,  419, 446],
+  [91,  95,  447, 474],
+  [96,  100, 475, 503],
+  [101, 105, 504, 531],
+  [106, 110, 532, 559],
+  [111, 115, 560, 587],
+  [116, 120, 588, 616],
+  [121, 125, 617, 644],
+  [126, 130, 645, 672],
+  [131, 135, 673, 701],
+  [136, 140, 702, 729],
+  [141, 145, 730, 761],
+  [146, 149, 762, 795],
+  [150, 150, 800, 800],
+];
+
+function rawToUniform(raw, topicIdx) {
+  const capped = Math.min(raw, RAW_TO_UNIFORM.length - 1);
+  return RAW_TO_UNIFORM[capped]?.[topicIdx] ?? null;
+}
+
+function weightedToResult(ws) {
+  const clamped = Math.max(50, Math.min(150, Math.round(ws)));
+  for (const [wMin, wMax, rMin, rMax] of WEIGHTED_BANDS) {
+    if (clamped >= wMin && clamped <= wMax) {
+      if (wMin === wMax) return `${rMin}`;
+      const t = (clamped - wMin) / (wMax - wMin);
+      const result = Math.round(rMin + t * (rMax - rMin));
+      return `${rMin}–${rMax}`;
+    }
+  }
+  return "—";
+}
+
+function calculatePsychoScores(gradeData) {
+  // Sum correct per section across all parts
+  const sectionTotals = {};
+  gradeData.results.forEach(r => {
+    const key = r.section;
+    if (!sectionTotals[key]) sectionTotals[key] = { correct: 0, total: 0 };
+    sectionTotals[key].correct += r.correct;
+    sectionTotals[key].total   += r.total;
+  });
+
+  // Identify topics by section name
+  const findSection = (keyword) => {
+    const key = Object.keys(sectionTotals).find(k => k.includes(keyword));
+    return key ? sectionTotals[key] : null;
+  };
+
+  const verbal = findSection("מילולית");
+  const quant  = findSection("כמותית");
+  const eng    = findSection("אנגלית");
+
+  if (!verbal || !quant || !eng) return null; // can't compute without all 3
+
+  const V = rawToUniform(verbal.correct, 2); // verbal = index 2
+  const Q = rawToUniform(quant.correct,  1); // quant  = index 1
+  const E = rawToUniform(eng.correct,    0); // english= index 0
+
+  if (V === null || Q === null || E === null) return null;
+
+  const multidisciplinary = (2*V + 2*Q + E) / 5;
+  const verbalEmphasis    = (3*V + Q + E)   / 5;
+  const quantEmphasis     = (3*Q + V + E)   / 5;
+
+  return {
+    topics: [
+      { label: "חשיבה מילולית", correct: verbal.correct, total: verbal.total, uniform: V },
+      { label: "חשיבה כמותית", correct: quant.correct,  total: quant.total,  uniform: Q },
+      { label: "אנגלית",        correct: eng.correct,    total: eng.total,    uniform: E },
+    ],
+    composites: [
+      { label: "רב-תחומי",   weighted: multidisciplinary, result: weightedToResult(multidisciplinary) },
+      { label: "דגש מילולי", weighted: verbalEmphasis,    result: weightedToResult(verbalEmphasis)    },
+      { label: "דגש כמותי",  weighted: quantEmphasis,     result: weightedToResult(quantEmphasis)     },
+    ],
+  };
+}
+
+function renderPsychoScores(gradeData) {
+  const el = $("psycho-scores");
+  const scores = calculatePsychoScores(gradeData);
+  if (!scores) { el.classList.add("hidden"); return; }
+
+  const topicCards = scores.topics.map(t => `
+    <div class="psych-topic-card">
+      <div class="psych-topic-label">${esc(t.label)}</div>
+      <div class="psych-topic-raw">${t.correct}/${t.total} נכון</div>
+      <div class="psych-topic-uniform">${t.uniform}</div>
+      <div class="psych-topic-uniform-lbl">ציון אחיד</div>
+    </div>`).join("");
+
+  const compositeRows = scores.composites.map(c => `
+    <div class="psych-composite-row">
+      <span class="psych-comp-label">${esc(c.label)}</span>
+      <span class="psych-comp-weighted">${Math.round(c.weighted)}</span>
+      <span class="psych-comp-arrow">→</span>
+      <span class="psych-comp-result">${esc(c.result)}</span>
+    </div>`).join("");
+
+  el.innerHTML = `
+    <div class="psych-section-title">ציון פסיכומטרי מוערך</div>
+    <div class="psych-topics">${topicCards}</div>
+    <div class="psych-composites">
+      <div class="psych-comp-header">
+        <span>סוג ציון</span><span>ציון משוקלל</span><span></span><span>אומדן תוצאה</span>
+      </div>
+      ${compositeRows}
+    </div>
+    <p class="psych-disclaimer">* הציונים הם אומדן בלבד ועשויים להשתנות בהתאם לנורמות המבחן הספציפי</p>
+  `;
+  el.classList.remove("hidden");
+}
+
+// ---------------------------------------------------------------------------
 // Close results
 // ---------------------------------------------------------------------------
 closeResultsBtn.addEventListener("click", () => resultsOverlay.classList.add("hidden"));
