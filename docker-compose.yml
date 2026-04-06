@@ -1,0 +1,29 @@
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./psycho.db:/app/psycho.db
+    environment:
+      - DATA_DIR=/app
+      - PORT=8000
+      # Uncomment and set for PostgreSQL:
+      # DATABASE_URL=postgresql://user:pass@host:5432/psycho
+      # Set a strong secret in production:
+      # SECRET_KEY=your-secret-key
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    ports:
+      - "80:80"
+    environment:
+      - BACKEND_URL=http://backend:8000
+    depends_on:
+      - backend

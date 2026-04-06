@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>מבחן פסיכומטרי</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ===== HEADER ===== -->
+  <header class="app-header">
+    <span class="app-title">מבחן פסיכומטרי</span>
+    <div class="header-controls">
+      <button id="stats-btn" class="btn-stats">סטטיסטיקה</button>
+      <select id="pdf-select" class="pdf-select">
+        <option value="">טוען רשימת מבחנים...</option>
+      </select>
+      <button id="sim-toggle" class="btn-sim" disabled>⏱ סימולציה</button>
+      <span id="progress-badge" class="progress-badge hidden"></span>
+      <button id="grade-btn" class="btn-grade" disabled>בדוק תשובות</button>
+      <button id="auth-btn" class="btn-auth">כניסה</button>
+    </div>
+  </header>
+
+  <!-- ===== WELCOME ===== -->
+  <div id="welcome" class="welcome-screen">
+    <div class="welcome-card">
+      <div class="welcome-icon">📄</div>
+      <h2>ברוך הבא</h2>
+      <p>בחר מבחן מהרשימה בכדי להתחיל</p>
+    </div>
+  </div>
+
+  <!-- ===== MAIN LAYOUT ===== -->
+  <div id="app-layout" class="app-layout hidden">
+
+    <!-- PDF viewer -->
+    <div class="pdf-pane">
+      <iframe id="pdf-frame" title="מסמך המבחן"></iframe>
+    </div>
+
+    <!-- Answer panel -->
+    <div class="answer-pane">
+
+      <!-- Sim sticky header (sim mode only) -->
+      <div id="sim-bar" class="sim-bar hidden">
+        <div class="sim-bar-meta">
+          <span id="sim-bar-section" class="sim-bar-section"></span>
+          <span id="sim-bar-counter" class="sim-bar-counter"></span>
+        </div>
+        <div id="sim-bar-part" class="sim-bar-part"></div>
+        <div id="sim-countdown" class="sim-countdown">20:00</div>
+      </div>
+
+      <!-- Loading / error -->
+      <div id="panel-loading" class="panel-loading">
+        <div class="spinner"></div>
+        <p>טוען מפתח תשובות…</p>
+      </div>
+      <div id="panel-error" class="panel-error hidden">
+        <p>⚠️ לא ניתן לטעון את מפתח התשובות</p>
+        <small id="panel-error-msg"></small>
+      </div>
+
+      <!-- Questions -->
+      <div id="answer-sections" class="answer-sections hidden"></div>
+
+      <!-- Sim sticky footer (sim mode only) -->
+      <div id="sim-footer" class="sim-footer hidden">
+        <button id="sim-submit-btn" class="btn-sim-submit">סיים פרק ←</button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ===== RESULTS OVERLAY ===== -->
+  <div id="results-overlay" class="overlay hidden" role="dialog" aria-modal="true">
+    <div class="results-modal">
+      <button class="close-btn" id="close-results" aria-label="סגור">✕</button>
+      <h2 class="results-heading">תוצאות המבחן</h2>
+      <div id="score-ring-wrap" class="score-ring-wrap">
+        <svg class="score-ring" viewBox="0 0 120 120">
+          <circle class="ring-bg" cx="60" cy="60" r="50"/>
+          <circle class="ring-fill" id="ring-fill" cx="60" cy="60" r="50"
+                  stroke-dasharray="0 314"/>
+        </svg>
+        <div class="score-text">
+          <span id="score-num" class="score-num">0</span>
+          <span class="score-denom" id="score-denom">/0</span>
+        </div>
+      </div>
+      <div id="results-breakdown" class="results-breakdown"></div>
+    </div>
+  </div>
+
+  <!-- ===== CHART OVERLAY ===== -->
+  <div id="chart-overlay" class="overlay hidden" role="dialog" aria-modal="true">
+    <div class="chart-modal">
+      <div class="chart-modal-header">
+        <h3 id="chart-title" class="chart-modal-title"></h3>
+        <button class="close-btn" id="close-chart" aria-label="סגור">✕</button>
+      </div>
+      <div class="chart-modal-body">
+        <div id="chart-tooltip" class="chart-tooltip hidden"></div>
+        <svg id="chart-svg" class="chart-svg" xmlns="http://www.w3.org/2000/svg"></svg>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== LOGIN MODAL ===== -->
+  <div id="auth-overlay" class="overlay hidden" role="dialog" aria-modal="true">
+    <div class="auth-modal">
+      <button class="close-btn" id="close-auth" aria-label="סגור">✕</button>
+      <div class="auth-tabs">
+        <button class="auth-tab active" id="tab-login" data-tab="login">כניסה</button>
+        <button class="auth-tab" id="tab-register" data-tab="register">הרשמה</button>
+      </div>
+      <div id="auth-error" class="auth-error hidden"></div>
+      <form id="auth-form" class="auth-form" autocomplete="on">
+        <label class="auth-label">שם משתמש
+          <input id="auth-username" class="auth-input" type="text" autocomplete="username" required />
+        </label>
+        <label class="auth-label">סיסמה
+          <input id="auth-password" class="auth-input" type="password" autocomplete="current-password" required />
+        </label>
+        <button type="submit" id="auth-submit" class="btn-auth-submit">כניסה</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ===== STATS PAGE OVERLAY ===== -->
+  <div id="stats-overlay" class="overlay hidden" role="dialog" aria-modal="true">
+    <div class="stats-modal">
+      <div class="stats-modal-header">
+        <h2 class="stats-title">סטטיסטיקה</h2>
+        <button class="close-btn" id="close-stats" aria-label="סגור">✕</button>
+      </div>
+      <div id="stats-body" class="stats-body">
+        <div class="stats-login-prompt">
+          <p>יש להתחבר כדי לצפות בסטטיסטיקה</p>
+          <button id="stats-login-btn" class="btn-auth-submit">כניסה</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js?v=5"></script>
+</body>
+</html>
