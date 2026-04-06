@@ -1,4 +1,5 @@
 import os
+import sqlalchemy
 from sqlalchemy import create_engine, Column, Integer, String, DateTime, ForeignKey
 from sqlalchemy.orm import declarative_base
 from sqlalchemy.orm import sessionmaker
@@ -46,3 +47,17 @@ class TestAttempt(Base):
 
 def init_db():
     Base.metadata.create_all(bind=engine)
+    # Migrate: add timing_json if it doesn't exist (safe to run on every startup)
+    with engine.connect() as conn:
+        try:
+            if _db_url.startswith("sqlite"):
+                conn.execute(
+                    sqlalchemy.text("ALTER TABLE test_attempts ADD COLUMN timing_json TEXT")
+                )
+            else:
+                conn.execute(
+                    sqlalchemy.text("ALTER TABLE test_attempts ADD COLUMN IF NOT EXISTS timing_json TEXT")
+                )
+            conn.commit()
+        except Exception:
+            pass  # column already exists — ignore
