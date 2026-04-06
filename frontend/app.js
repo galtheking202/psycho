@@ -719,7 +719,7 @@ function drawSvgChart(times) {
   const svg     = chartSvgEl;
   const W       = svg.clientWidth  || 700;
   const H       = svg.clientHeight || 340;
-  const PAD     = { top: 24, right: 16, bottom: 44, left: 54 };
+  const PAD     = { top: 24, right: 16, bottom: 52, left: 58 };
   const plotW   = W - PAD.left - PAD.right;
   const plotH   = H - PAD.top  - PAD.bottom;
   const n       = times.length;
@@ -758,12 +758,12 @@ function drawSvgChart(times) {
       "stroke-width": i === 0 ? 1.5 : 1,
       "stroke-dasharray": i === 0 ? "" : "3 3"
     }));
-    // label
+    // label — plain seconds, no unit suffix
     const lbl = el("text", {
       x: PAD.left - 8, y: yPos + 4,
       "text-anchor": "end", "font-size": 11, fill: "#64748b"
     });
-    lbl.textContent = fmtMs(val);
+    lbl.textContent = String(Math.round(val / 1000));
     svg.appendChild(lbl);
   }
 
@@ -776,7 +776,7 @@ function drawSvgChart(times) {
   svg.appendChild(avgLine);
   const avgLbl = el("text", { x: PAD.left + plotW - 4, y: avgY - 5,
     "text-anchor": "end", "font-size": 10, fill: "#6366f1" });
-  avgLbl.textContent = `ממוצע ${fmtMs(avgMs)}`;
+  avgLbl.textContent = `ממוצע ${Math.round(avgMs / 1000)}`;
   svg.appendChild(avgLbl);
 
   // Bars
@@ -811,13 +811,22 @@ function drawSvgChart(times) {
     svg.appendChild(xLbl);
   });
 
-  // X axis label
+  // X axis title
   const xAxisLbl = el("text", {
-    x: PAD.left + plotW / 2, y: H - 4,
-    "text-anchor": "middle", "font-size": 12, fill: "#64748b"
+    x: PAD.left + plotW / 2, y: H - 6,
+    "text-anchor": "middle", "font-size": 12, fill: "#475569", "font-weight": "600"
   });
   xAxisLbl.textContent = "מספר שאלה";
   svg.appendChild(xAxisLbl);
+
+  // Y axis title (rotated)
+  const yAxisLbl = el("text", {
+    x: 14, y: PAD.top + plotH / 2,
+    "text-anchor": "middle", "font-size": 12, fill: "#475569", "font-weight": "600",
+    transform: `rotate(-90, 14, ${PAD.top + plotH / 2})`
+  });
+  yAxisLbl.textContent = "זמן (שניות)";
+  svg.appendChild(yAxisLbl);
 }
 
 function niceNumber(ms) {
@@ -1004,8 +1013,6 @@ function renderPsychoScores(gradeData) {
   const scores = calculatePsychoScores(gradeData);
   if (!scores) { el.classList.add("hidden"); return; }
 
-  const hasTimingData = state.answerLog.length > 0;
-
   const compositeRows = scores.composites.map(c => `
     <div class="psych-composite-row">
       <span class="psych-comp-label">${esc(c.label)}</span>
@@ -1029,17 +1036,13 @@ function renderPsychoScores(gradeData) {
   const topicsRow = $("psych-topics-row");
   scores.topics.forEach(t => {
     const card = document.createElement("div");
-    card.className = "psych-topic-card" + (hasTimingData ? " psych-topic-card--clickable" : "");
+    card.className = "psych-topic-card";
     card.innerHTML = `
       <div class="psych-topic-label">${esc(t.label)}</div>
       <div class="psych-topic-raw">${t.correct}/${t.total} נכון</div>
       <div class="psych-topic-uniform">${t.uniform}</div>
       <div class="psych-topic-uniform-lbl">ציון אחיד</div>
-      ${hasTimingData ? '<div class="psych-topic-chart-hint">📊 גרף זמנים</div>' : ''}
     `;
-    if (hasTimingData) {
-      card.addEventListener("click", () => openSectionChart(t.label));
-    }
     topicsRow.appendChild(card);
   });
 
@@ -1050,27 +1053,26 @@ function openSectionChart(sectionName) {
   const sectionLog = state.answerLog.filter(e => e.sectionName === sectionName);
   if (!sectionLog.length) return;
 
-  // Group by partIdx, compute per-question times within each part
+  // Group by partIdx, sort each part's entries by elapsed time
   const byPart = {};
   sectionLog.forEach(e => {
     if (!byPart[e.partIdx]) byPart[e.partIdx] = [];
     byPart[e.partIdx].push(e);
   });
-  Object.values(byPart).forEach(log => log.sort((a, b) => Number(a.q) - Number(b.q)));
+  Object.values(byPart).forEach(log => log.sort((a, b) => a.partElapsed_ms - b.partElapsed_ms));
 
-  // Build flat times array ordered by part then question
+  // Build flat times array — sequential question numbers across all parts
   const times = [];
+  let seq = 1;
   Object.keys(byPart).sort((a, b) => Number(a) - Number(b)).forEach(pidx => {
-    const log = byPart[pidx].slice().sort((a, b) => a.partElapsed_ms - b.partElapsed_ms);
-    const partLabel = state.simParts[Number(pidx)]?.partLabel || `פרק ${Number(pidx) + 1}`;
-    const shortPart = partLabel.includes("ראשון") ? "א" : partLabel.includes("שני") ? "ב" : String(Number(pidx) + 1);
+    const log = byPart[pidx];
     log.forEach((e, i) => {
       const prev = i === 0 ? 0 : log[i - 1].partElapsed_ms;
-      times.push({ q: `${shortPart}${e.q}`, ms: e.partElapsed_ms - prev });
+      times.push({ q: String(seq++), ms: e.partElapsed_ms - prev });
     });
   });
 
-  chartTitleEl.textContent = `${sectionName} — גרף זמנים לפי שאלה`;
+  chartTitleEl.textContent = `${sectionName} — זמן לפי שאלה`;
   chartOverlay.classList.remove("hidden");
   requestAnimationFrame(() => drawSvgChart(times));
 }
@@ -1306,6 +1308,35 @@ async function renderStatsPage() {
       hdr.classList.toggle("open", !open);
     });
   });
+
+  // Timing section — shown only when current session has sim data
+  if (state.answerLog.length > 0) {
+    const sections = [...new Set(state.answerLog.map(e => e.sectionName))];
+
+    const timingBlock = document.createElement("div");
+    timingBlock.className = "stats-timing-block";
+    timingBlock.innerHTML = `
+      <div class="stats-timing-title">גרף זמנים — הפעלה נוכחית</div>
+      <div class="stats-timing-cards" id="stats-timing-cards"></div>
+    `;
+    statsBody.appendChild(timingBlock);
+
+    const cardsEl = timingBlock.querySelector("#stats-timing-cards");
+    sections.forEach(sectionName => {
+      const card = document.createElement("div");
+      card.className = "stats-timing-card";
+      card.innerHTML = `
+        <div class="stats-timing-card-icon">📊</div>
+        <div class="stats-timing-card-label">${esc(sectionName)}</div>
+        <div class="stats-timing-card-hint">לחץ לגרף</div>
+      `;
+      card.addEventListener("click", () => {
+        statsOverlay.classList.add("hidden");
+        openSectionChart(sectionName);
+      });
+      cardsEl.appendChild(card);
+    });
+  }
 }
 
 // ---------------------------------------------------------------------------

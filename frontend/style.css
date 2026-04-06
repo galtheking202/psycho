@@ -796,6 +796,52 @@ html, body {
   font-size: 15px;
 }
 
+/* Timing section inside stats page */
+.stats-timing-block {
+  margin-top: 28px;
+  border-top: 2px solid var(--gray-200);
+  padding-top: 20px;
+}
+
+.stats-timing-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--blue);
+  margin-bottom: 14px;
+}
+
+.stats-timing-cards {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.stats-timing-card {
+  flex: 1;
+  min-width: 140px;
+  background: var(--gray-50);
+  border: 1.5px solid var(--blue);
+  border-radius: 12px;
+  padding: 18px 12px;
+  text-align: center;
+  cursor: pointer;
+  transition: transform .15s, box-shadow .15s, background .15s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.stats-timing-card:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 6px 20px rgba(29,78,216,.18);
+  background: #eff6ff;
+}
+
+.stats-timing-card-icon { font-size: 26px; }
+.stats-timing-card-label { font-size: 13px; font-weight: 700; color: var(--gray-800); }
+.stats-timing-card-hint { font-size: 11px; color: var(--blue); opacity: .8; }
+
 /* =====================================================================
    Sim panel — sticky top bar inside the answer pane
    ===================================================================== */
