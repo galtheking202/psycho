@@ -53,4 +53,15 @@ class TestAttempt(Base):
 
 
 def init_db():
+    from sqlalchemy import text, inspect as sa_inspect
+    insp = sa_inspect(engine)
+
+    # One-time migration: if test_attempts exists without session_id, drop both tables
+    if "test_attempts" in insp.get_table_names():
+        cols = {c["name"] for c in insp.get_columns("test_attempts")}
+        if "session_id" not in cols:
+            with engine.begin() as conn:
+                conn.execute(text("DROP TABLE IF EXISTS test_attempts"))
+                conn.execute(text("DROP TABLE IF EXISTS test_sessions"))
+
     Base.metadata.create_all(bind=engine)
