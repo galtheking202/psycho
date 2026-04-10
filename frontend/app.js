@@ -27,12 +27,6 @@ const state = {
   // Time tracking (per part)
   answerLog: [],   // [{slot,q,val,partElapsed_ms,sectionName,partLabel,partIdx}]
   partTimes: [],   // [total_ms_used_per_part]  indexed by part
-
-  // PDF navigation
-  pdfBaseUrl:       null,
-  pdfPage:          1,
-  pdfReady:         false,  // true once pdf-ready fires
-  simTimerPending:  false,  // waiting for PDF to finish loading before starting timer
 };
 
 // ---------------------------------------------------------------------------
@@ -152,10 +146,7 @@ async function loadPdf(id) {
 
   welcome.classList.add("hidden");
   appLayout.classList.remove("hidden");
-  state.pdfBaseUrl  = `/api/pdf/${encodeURIComponent(id)}/file`;
-  state.pdfPage     = 1;
-  state.pdfReady    = false;
-  pdfFrame.src      = `/pdf-viewer.html?file=${encodeURIComponent(state.pdfBaseUrl)}`;
+  pdfFrame.src = `/api/pdf/${encodeURIComponent(id)}/file`;
 
   answerSections.classList.add("hidden");
   answerSections.innerHTML = "";
@@ -250,9 +241,6 @@ function startSim() {
   gradeBtn.classList.add("hidden");
   progressBadge.classList.add("hidden");
 
-  // Jump PDF to page 4 (start of test questions)
-  pdfFrame.contentWindow.postMessage({ cmd: 'goto', page: 4 }, '*');
-
   console.log("[sim] parts built:", state.simParts.length, "→ showing part 0");
   showSimPart(0);
 }
@@ -280,15 +268,8 @@ function showSimPart(idx) {
   // Build questions for this part only
   buildPartPanel(part);
 
-  // Start countdown — defer until PDF is fully loaded for the first part
-  if (idx === 0 && !state.pdfReady) {
-    state.simTimerPending = true;
-    simCountdownEl.textContent = "טוען...";
-    simSubmitBtn.disabled = true;
-  } else {
-    state.simTimerPending = false;
-    startPartTimer();
-  }
+  // Start countdown
+  startPartTimer();
 }
 
 // ---------------------------------------------------------------------------
@@ -1432,228 +1413,6 @@ async function renderStatsPage() {
     });
   });
 }
-
-// ---------------------------------------------------------------------------
-// Voice recognition
-// ---------------------------------------------------------------------------
-const WORD_TO_NUM = {
-  'zero':0,'one':1,'two':2,'three':3,'four':4,'five':5,'six':6,'seven':7,
-  'eight':8,'nine':9,'ten':10,'eleven':11,'twelve':12,'thirteen':13,
-  'fourteen':14,'fifteen':15,'sixteen':16,'seventeen':17,'eighteen':18,
-  'nineteen':19,'twenty':20,'twenty one':21,'twenty two':22,'twenty three':23,
-  'twenty four':24,'twenty five':25,'twenty six':26,'twenty seven':27,
-  'twenty eight':28,'twenty nine':29,'thirty':30,'thirty one':31,'thirty two':32,
-  'thirty three':33,'thirty four':34,'thirty five':35,'thirty six':36,
-  'thirty seven':37,'thirty eight':38,'thirty nine':39,'forty':40,
-  'forty one':41,'forty two':42,'forty three':43,'forty four':44,'forty five':45,
-  'forty six':46,'forty seven':47,'forty eight':48,
-};
-
-function wordsToNum(str) {
-  str = str.trim().toLowerCase().replace(/-/g, ' ');
-  if (/^\d+$/.test(str)) return parseInt(str, 10);
-  return WORD_TO_NUM[str] ?? null;
-}
-
-let _voiceActive = false;
-let _recognition  = null;
-const micBtn = $("mic-btn");
-
-// ---------------------------------------------------------------------------
-// Voice debug log
-// ---------------------------------------------------------------------------
-let _voiceLogEl = null;
-function getVoiceLog() {
-  if (!_voiceLogEl) {
-    _voiceLogEl = document.createElement("div");
-    _voiceLogEl.id = "voice-log";
-    _voiceLogEl.className = "voice-log";
-    _voiceLogEl.innerHTML = `
-      <div class="voice-log-header">
-        <span>🎤 קול — לוג</span>
-        <button class="voice-log-clear" onclick="document.getElementById('voice-log-entries').innerHTML=''">נקה</button>
-        <button class="voice-log-close" onclick="this.closest('#voice-log').remove(); window._voiceLogEl=null">✕</button>
-      </div>
-      <div id="voice-log-entries" class="voice-log-entries"></div>`;
-    document.body.appendChild(_voiceLogEl);
-  }
-  return document.getElementById("voice-log-entries");
-}
-
-function vlog(type, msg) {
-  const entries = getVoiceLog();
-  const row = document.createElement("div");
-  row.className = `vlog-row vlog-${type}`;
-  const time = new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  row.textContent = `[${time}] ${msg}`;
-  entries.prepend(row);
-  // Keep last 40 entries
-  while (entries.children.length > 40) entries.removeChild(entries.lastChild);
-}
-
-function toggleVoice() {
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SR) {
-    vlog("error", "SpeechRecognition API לא נתמך בדפדפן זה");
-    showVoiceToast("זיהוי קול אינו נתמך בדפדפן זה");
-    return;
-  }
-  if (_voiceActive) {
-    _recognition?.stop();
-    _voiceActive = false;
-    micBtn.classList.remove("mic-active");
-    vlog("info", "מיקרופון כובה");
-    showVoiceToast("מיקרופון כבוי");
-    return;
-  }
-  _recognition = new SR();
-  _recognition.lang = "en-US";
-  _recognition.continuous = true;
-  _recognition.interimResults = false;
-
-  _recognition.onresult = (ev) => {
-    const transcript = ev.results[ev.results.length - 1][0].transcript.trim().toLowerCase();
-    const conf = (ev.results[ev.results.length - 1][0].confidence * 100).toFixed(0);
-    vlog("heard", `נשמע: "${transcript}" (${conf}%)`);
-    handleVoiceCommand(transcript);
-  };
-  _recognition.onerror = (ev) => {
-    vlog("error", `שגיאה: ${ev.error}`);
-    if (ev.error !== "no-speech") {
-      _voiceActive = false;
-      micBtn.classList.remove("mic-active");
-    }
-  };
-  _recognition.onstart  = () => vlog("info", "מיקרופון מאזין...");
-  _recognition.onend    = () => {
-    vlog("info", "הפעלה הסתיימה" + (_voiceActive ? " — מפעיל מחדש" : ""));
-    if (_voiceActive) _recognition.start();
-  };
-
-  _recognition.start();
-  _voiceActive = true;
-  micBtn.classList.add("mic-active");
-  vlog("info", "מיקרופון הופעל (en-US, continuous)");
-  showVoiceToast("מיקרופון פעיל");
-}
-
-function stopVoice() {
-  if (_voiceActive) {
-    _voiceActive = false;
-    _recognition?.stop();
-    micBtn.classList.remove("mic-active");
-  }
-}
-
-function handleVoiceCommand(transcript) {
-  // PDF navigation
-  if (/^(next|forward|next page)$/.test(transcript)) {
-    vlog("action", `פקודה: עמוד הבא`);
-    navigatePdf(1); return;
-  }
-  if (/^(previous|prev|back|go back|prior|last page)$/.test(transcript)) {
-    vlog("action", `פקודה: עמוד קודם`);
-    navigatePdf(-1); return;
-  }
-
-  // Finish / submit current part
-  if (/^(finish|done|submit|next part|finish part)$/.test(transcript)) {
-    vlog("action", "פקודה: סיום פרק");
-    if (!simSubmitBtn.disabled) {
-      simSubmitBtn.click();
-    } else {
-      vlog("warn", "כפתור סיום פרק אינו זמין כרגע");
-    }
-    return;
-  }
-
-  // Answer format: "[question] number [answer]"  e.g. "seventeen number two" / "17 number 2"
-  const tokens  = transcript.replace(/-/g, ' ').trim().split(/\s+/);
-  const numIdx  = tokens.indexOf('number');
-
-  if (numIdx > 0 && numIdx < tokens.length - 1) {
-    const qStr   = tokens.slice(0, numIdx).join(' ');
-    const ansStr = tokens.slice(numIdx + 1).join(' ');
-    const qNum   = wordsToNum(qStr);
-    const ansNum = wordsToNum(ansStr);
-    vlog("parse", `פענוח: שאלה="${qStr}"→${qNum}, תשובה="${ansStr}"→${ansNum}`);
-    if (qNum !== null && ansNum !== null && ansNum >= 1 && ansNum <= 4) {
-      selectAnswerByVoice(qNum, ansNum);
-    } else {
-      vlog("warn", `לא זוהתה פקודה תקינה מ: "${transcript}"`);
-    }
-  } else {
-    vlog("warn", `לא זוהתה פקודה (פורמט: "[שאלה] number [תשובה]"): "${transcript}"`);
-  }
-}
-
-function navigatePdf(delta) {
-  if (!state.pdfBaseUrl) { vlog("error", "pdfBaseUrl לא מוגדר"); return; }
-  const cmd = delta > 0 ? 'next' : 'prev';
-  vlog("action", `שולח postMessage: {cmd:"${cmd}"} לעמוד ${state.pdfPage + delta}`);
-  pdfFrame.contentWindow.postMessage({ cmd }, '*');
-  showVoiceToast(delta > 0 ? 'עמוד הבא ←' : '→ עמוד קודם');
-}
-
-// Keep state.pdfPage in sync with the viewer; start deferred sim timer on ready
-window.addEventListener('message', ({ data }) => {
-  if (!data) return;
-  if (data.type === 'pdf-page') state.pdfPage = data.page;
-  if (data.type === 'pdf-ready') {
-    state.pdfReady = true;
-    if (state.simTimerPending) {
-      state.simTimerPending = false;
-      simSubmitBtn.disabled = false;
-      startPartTimer();
-    }
-  }
-});
-
-function selectAnswerByVoice(qNum, ansNum) {
-  const slot = state.simActive && state.simParts.length
-    ? state.simParts[state.simPartIdx].slot
-    : null;
-
-  vlog("action", `בוחר שאלה ${qNum} תשובה ${ansNum} | slot=${slot || "כל החלקים"}`);
-
-  const selector = slot
-    ? `.question-row[data-slot="${CSS.escape(slot)}"][data-q="${qNum}"]`
-    : `.question-row[data-q="${qNum}"]`;
-
-  const row = answerSections.querySelector(selector);
-  if (!row) {
-    vlog("error", `שאלה ${qNum} לא נמצאה בDOM (selector: ${selector})`);
-    showVoiceToast(`שאלה ${qNum} לא נמצאה`);
-    return;
-  }
-
-  const btn = row.querySelector(`.opt-btn[data-val="${ansNum}"]`);
-  if (btn) {
-    btn.click();
-    vlog("action", `✓ לחיצה על שאלה ${qNum} תשובה ${ansNum}`);
-    showVoiceToast(`✓ שאלה ${qNum} — ${ansNum}`);
-    row.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  } else {
-    vlog("error", `כפתור תשובה ${ansNum} לא נמצא`);
-  }
-}
-
-let _toastTimer = null;
-function showVoiceToast(msg) {
-  let toast = document.getElementById("voice-toast");
-  if (!toast) {
-    toast = document.createElement("div");
-    toast.id = "voice-toast";
-    toast.className = "voice-toast";
-    document.body.appendChild(toast);
-  }
-  toast.textContent = msg;
-  toast.classList.add("voice-toast--show");
-  clearTimeout(_toastTimer);
-  _toastTimer = setTimeout(() => toast.classList.remove("voice-toast--show"), 1800);
-}
-
-micBtn.addEventListener("click", toggleVoice);
 
 // ---------------------------------------------------------------------------
 // Boot
