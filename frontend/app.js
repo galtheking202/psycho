@@ -29,8 +29,10 @@ const state = {
   partTimes: [],   // [total_ms_used_per_part]  indexed by part
 
   // PDF navigation
-  pdfBaseUrl: null,
-  pdfPage:    1,
+  pdfBaseUrl:       null,
+  pdfPage:          1,
+  pdfReady:         false,  // true once pdf-ready fires
+  simTimerPending:  false,  // waiting for PDF to finish loading before starting timer
 };
 
 // ---------------------------------------------------------------------------
@@ -150,9 +152,10 @@ async function loadPdf(id) {
 
   welcome.classList.add("hidden");
   appLayout.classList.remove("hidden");
-  state.pdfBaseUrl = `/api/pdf/${encodeURIComponent(id)}/file`;
-  state.pdfPage    = 1;
-  pdfFrame.src     = `/pdf-viewer.html?file=${encodeURIComponent(state.pdfBaseUrl)}`;
+  state.pdfBaseUrl  = `/api/pdf/${encodeURIComponent(id)}/file`;
+  state.pdfPage     = 1;
+  state.pdfReady    = false;
+  pdfFrame.src      = `/pdf-viewer.html?file=${encodeURIComponent(state.pdfBaseUrl)}`;
 
   answerSections.classList.add("hidden");
   answerSections.innerHTML = "";
@@ -247,6 +250,9 @@ function startSim() {
   gradeBtn.classList.add("hidden");
   progressBadge.classList.add("hidden");
 
+  // Jump PDF to page 4 (start of test questions)
+  pdfFrame.contentWindow.postMessage({ cmd: 'goto', page: 4 }, '*');
+
   console.log("[sim] parts built:", state.simParts.length, "→ showing part 0");
   showSimPart(0);
 }
@@ -274,8 +280,15 @@ function showSimPart(idx) {
   // Build questions for this part only
   buildPartPanel(part);
 
-  // Start countdown
-  startPartTimer();
+  // Start countdown — defer until PDF is fully loaded for the first part
+  if (idx === 0 && !state.pdfReady) {
+    state.simTimerPending = true;
+    simCountdownEl.textContent = "טוען...";
+    simSubmitBtn.disabled = true;
+  } else {
+    state.simTimerPending = false;
+    startPartTimer();
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1580,9 +1593,18 @@ function navigatePdf(delta) {
   showVoiceToast(delta > 0 ? 'עמוד הבא ←' : '→ עמוד קודם');
 }
 
-// Keep state.pdfPage in sync with the viewer
+// Keep state.pdfPage in sync with the viewer; start deferred sim timer on ready
 window.addEventListener('message', ({ data }) => {
-  if (data?.type === 'pdf-page') state.pdfPage = data.page;
+  if (!data) return;
+  if (data.type === 'pdf-page') state.pdfPage = data.page;
+  if (data.type === 'pdf-ready') {
+    state.pdfReady = true;
+    if (state.simTimerPending) {
+      state.simTimerPending = false;
+      simSubmitBtn.disabled = false;
+      startPartTimer();
+    }
+  }
 });
 
 function selectAnswerByVoice(qNum, ansNum) {
