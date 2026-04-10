@@ -1567,11 +1567,13 @@ function handleVoiceCommand(transcript) {
     return;
   }
 
-  // Answer selection: "[question number] [answer 1-4]"
-  const tokens = transcript.replace(/-/g, ' ').trim().split(/\s+/);
-  if (tokens.length >= 2) {
-    const ansStr = tokens[tokens.length - 1];
-    const qStr   = tokens.slice(0, -1).join(' ');
+  // Answer format: "[question] number [answer]"  e.g. "seventeen number two" / "17 number 2"
+  const tokens  = transcript.replace(/-/g, ' ').trim().split(/\s+/);
+  const numIdx  = tokens.indexOf('number');
+
+  if (numIdx > 0 && numIdx < tokens.length - 1) {
+    const qStr   = tokens.slice(0, numIdx).join(' ');
+    const ansStr = tokens.slice(numIdx + 1).join(' ');
     const qNum   = wordsToNum(qStr);
     const ansNum = wordsToNum(ansStr);
     vlog("parse", `פענוח: שאלה="${qStr}"→${qNum}, תשובה="${ansStr}"→${ansNum}`);
@@ -1581,7 +1583,7 @@ function handleVoiceCommand(transcript) {
       vlog("warn", `לא זוהתה פקודה תקינה מ: "${transcript}"`);
     }
   } else {
-    vlog("warn", `לא זוהתה פקודה: "${transcript}"`);
+    vlog("warn", `לא זוהתה פקודה (פורמט: "[שאלה] number [תשובה]"): "${transcript}"`);
   }
 }
 
