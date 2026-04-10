@@ -152,7 +152,7 @@ async function loadPdf(id) {
   appLayout.classList.remove("hidden");
   state.pdfBaseUrl = `/api/pdf/${encodeURIComponent(id)}/file`;
   state.pdfPage    = 1;
-  pdfFrame.src     = state.pdfBaseUrl;
+  pdfFrame.src     = `/pdf-viewer.html?file=${encodeURIComponent(state.pdfBaseUrl)}`;
 
   answerSections.classList.add("hidden");
   answerSections.innerHTML = "";
@@ -1514,12 +1514,16 @@ function handleVoiceCommand(transcript) {
 }
 
 function navigatePdf(delta) {
-  state.pdfPage = Math.max(1, (state.pdfPage || 1) + delta);
-  if (state.pdfBaseUrl) {
-    pdfFrame.src = `${state.pdfBaseUrl}#page=${state.pdfPage}`;
-    showVoiceToast(delta > 0 ? `עמוד ${state.pdfPage} ←` : `→ עמוד ${state.pdfPage}`);
-  }
+  if (!state.pdfBaseUrl) return;
+  const cmd = delta > 0 ? 'next' : 'prev';
+  pdfFrame.contentWindow.postMessage({ cmd }, '*');
+  showVoiceToast(delta > 0 ? 'עמוד הבא ←' : '→ עמוד קודם');
 }
+
+// Keep state.pdfPage in sync with the viewer
+window.addEventListener('message', ({ data }) => {
+  if (data?.type === 'pdf-page') state.pdfPage = data.page;
+});
 
 function selectAnswerByVoice(qNum, ansNum) {
   const slot = state.simActive && state.simParts.length
