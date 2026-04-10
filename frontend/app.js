@@ -1543,6 +1543,17 @@ function handleVoiceCommand(transcript) {
     navigatePdf(-1); return;
   }
 
+  // Finish / submit current part
+  if (/^(finish|done|submit|next part|finish part)$/.test(transcript)) {
+    vlog("action", "פקודה: סיום פרק");
+    if (!simSubmitBtn.disabled) {
+      simSubmitBtn.click();
+    } else {
+      vlog("warn", "כפתור סיום פרק אינו זמין כרגע");
+    }
+    return;
+  }
+
   // Answer selection: "[question number] [answer 1-4]"
   const tokens = transcript.replace(/-/g, ' ').trim().split(/\s+/);
   if (tokens.length >= 2) {
