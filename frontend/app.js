@@ -1556,27 +1556,6 @@ function handleVoiceCommand(transcript) {
 
   // Answer selection: "[question number] [answer 1-4]"
   const tokens = transcript.replace(/-/g, ' ').trim().split(/\s+/);
-
-  if (tokens.length === 1) {
-    // Single number 1-4 → answer next unanswered question in current part
-    const ansNum = wordsToNum(tokens[0]);
-    if (ansNum !== null && ansNum >= 1 && ansNum <= 4 && state.simActive && state.simParts.length) {
-      const part     = state.simParts[state.simPartIdx];
-      const answered = state.userAnswers[part.slot] || {};
-      const nextQ    = Object.keys(part.answers).map(Number).sort((a, b) => a - b)
-                        .find(q => !answered[String(q)] && !answered[q]);
-      if (nextQ !== undefined) {
-        vlog("parse", `תשובה בודדת ${ansNum} → שאלה הבאה: ${nextQ}`);
-        selectAnswerByVoice(nextQ, ansNum);
-      } else {
-        vlog("warn", `אין שאלות ללא תשובה בפרק הנוכחי`);
-      }
-    } else {
-      vlog("warn", `לא זוהתה פקודה: "${transcript}"`);
-    }
-    return;
-  }
-
   if (tokens.length >= 2) {
     const ansStr = tokens[tokens.length - 1];
     const qStr   = tokens.slice(0, -1).join(' ');
@@ -1588,6 +1567,8 @@ function handleVoiceCommand(transcript) {
     } else {
       vlog("warn", `לא זוהתה פקודה תקינה מ: "${transcript}"`);
     }
+  } else {
+    vlog("warn", `לא זוהתה פקודה: "${transcript}"`);
   }
 }
 
