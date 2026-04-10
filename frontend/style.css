@@ -992,6 +992,56 @@ html, body {
 .btn-sim-submit.last:hover:not(:disabled) { background: #15803d; }
 .btn-sim-submit:disabled { opacity: .45; cursor: not-allowed; }
 
+/* Mic button */
+.btn-mic {
+  background: none;
+  border: 1.5px solid rgba(255,255,255,.25);
+  border-radius: 50%;
+  width: 36px;
+  height: 36px;
+  font-size: 16px;
+  cursor: pointer;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .15s, border-color .15s, transform .1s;
+  flex-shrink: 0;
+}
+.btn-mic:hover { background: rgba(255,255,255,.12); border-color: rgba(255,255,255,.5); }
+.btn-mic.mic-active {
+  background: #dc2626;
+  border-color: #dc2626;
+  animation: mic-pulse 1.4s ease-in-out infinite;
+}
+@keyframes mic-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(220,38,38,.5); }
+  50%       { box-shadow: 0 0 0 8px rgba(220,38,38,0); }
+}
+
+/* Voice toast */
+.voice-toast {
+  position: fixed;
+  bottom: 80px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: rgba(15,23,42,.88);
+  color: #fff;
+  padding: 10px 20px;
+  border-radius: 24px;
+  font-size: 14px;
+  font-weight: 600;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity .2s, transform .2s;
+  white-space: nowrap;
+  z-index: 9999;
+}
+.voice-toast--show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
 /* Make answer-pane a flex-col so sticky header/footer work */
 .answer-pane {
   display: flex;

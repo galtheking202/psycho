@@ -27,6 +27,10 @@ const state = {
   // Time tracking (per part)
   answerLog: [],   // [{slot,q,val,partElapsed_ms,sectionName,partLabel,partIdx}]
   partTimes: [],   // [total_ms_used_per_part]  indexed by part
+
+  // PDF navigation
+  pdfBaseUrl: null,
+  pdfPage:    1,
 };
 
 // ---------------------------------------------------------------------------
@@ -146,7 +150,9 @@ async function loadPdf(id) {
 
   welcome.classList.add("hidden");
   appLayout.classList.remove("hidden");
-  pdfFrame.src = `/api/pdf/${encodeURIComponent(id)}/file`;
+  state.pdfBaseUrl = `/api/pdf/${encodeURIComponent(id)}/file`;
+  state.pdfPage    = 1;
+  pdfFrame.src     = state.pdfBaseUrl;
 
   answerSections.classList.add("hidden");
   answerSections.innerHTML = "";
@@ -1413,6 +1419,145 @@ async function renderStatsPage() {
     });
   });
 }
+
+// ---------------------------------------------------------------------------
+// Voice recognition
+// ---------------------------------------------------------------------------
+const WORD_TO_NUM = {
+  'zero':0,'one':1,'two':2,'three':3,'four':4,'five':5,'six':6,'seven':7,
+  'eight':8,'nine':9,'ten':10,'eleven':11,'twelve':12,'thirteen':13,
+  'fourteen':14,'fifteen':15,'sixteen':16,'seventeen':17,'eighteen':18,
+  'nineteen':19,'twenty':20,'twenty one':21,'twenty two':22,'twenty three':23,
+  'twenty four':24,'twenty five':25,'twenty six':26,'twenty seven':27,
+  'twenty eight':28,'twenty nine':29,'thirty':30,'thirty one':31,'thirty two':32,
+  'thirty three':33,'thirty four':34,'thirty five':35,'thirty six':36,
+  'thirty seven':37,'thirty eight':38,'thirty nine':39,'forty':40,
+  'forty one':41,'forty two':42,'forty three':43,'forty four':44,'forty five':45,
+  'forty six':46,'forty seven':47,'forty eight':48,
+};
+
+function wordsToNum(str) {
+  str = str.trim().toLowerCase().replace(/-/g, ' ');
+  if (/^\d+$/.test(str)) return parseInt(str, 10);
+  return WORD_TO_NUM[str] ?? null;
+}
+
+let _voiceActive = false;
+let _recognition  = null;
+const micBtn = $("mic-btn");
+
+function toggleVoice() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) {
+    showVoiceToast("זיהוי קול אינו נתמך בדפדפן זה");
+    return;
+  }
+  if (_voiceActive) {
+    _recognition?.stop();
+    _voiceActive = false;
+    micBtn.classList.remove("mic-active");
+    showVoiceToast("מיקרופון כבוי");
+    return;
+  }
+  _recognition = new SR();
+  _recognition.lang = "en-US";
+  _recognition.continuous = true;
+  _recognition.interimResults = false;
+
+  _recognition.onresult = (ev) => {
+    const transcript = ev.results[ev.results.length - 1][0].transcript.trim().toLowerCase();
+    handleVoiceCommand(transcript);
+  };
+  _recognition.onerror = () => {
+    _voiceActive = false;
+    micBtn.classList.remove("mic-active");
+  };
+  _recognition.onend = () => {
+    if (_voiceActive) _recognition.start(); // auto-restart
+  };
+
+  _recognition.start();
+  _voiceActive = true;
+  micBtn.classList.add("mic-active");
+  showVoiceToast("מיקרופון פעיל");
+}
+
+function stopVoice() {
+  if (_voiceActive) {
+    _voiceActive = false;
+    _recognition?.stop();
+    micBtn.classList.remove("mic-active");
+  }
+}
+
+function handleVoiceCommand(transcript) {
+  // PDF navigation
+  if (/^(next|forward|next page)$/.test(transcript)) {
+    navigatePdf(1); return;
+  }
+  if (/^(previous|prev|back|go back|prior|last page)$/.test(transcript)) {
+    navigatePdf(-1); return;
+  }
+
+  // Answer selection: "[question number] [answer 1-4]"
+  // e.g. "sixteen four", "16 4", "twenty one 3"
+  const tokens = transcript.replace(/-/g, ' ').trim().split(/\s+/);
+  if (tokens.length >= 2) {
+    const ansStr = tokens[tokens.length - 1];
+    const qStr   = tokens.slice(0, -1).join(' ');
+    const qNum   = wordsToNum(qStr);
+    const ansNum = wordsToNum(ansStr);
+    if (qNum !== null && ansNum !== null && ansNum >= 1 && ansNum <= 4) {
+      selectAnswerByVoice(qNum, ansNum);
+    }
+  }
+}
+
+function navigatePdf(delta) {
+  state.pdfPage = Math.max(1, (state.pdfPage || 1) + delta);
+  if (state.pdfBaseUrl) {
+    pdfFrame.src = `${state.pdfBaseUrl}#page=${state.pdfPage}`;
+    showVoiceToast(delta > 0 ? `עמוד ${state.pdfPage} ←` : `→ עמוד ${state.pdfPage}`);
+  }
+}
+
+function selectAnswerByVoice(qNum, ansNum) {
+  const slot = state.simActive && state.simParts.length
+    ? state.simParts[state.simPartIdx].slot
+    : null;
+
+  const selector = slot
+    ? `.question-row[data-slot="${CSS.escape(slot)}"][data-q="${qNum}"]`
+    : `.question-row[data-q="${qNum}"]`;
+
+  const row = answerSections.querySelector(selector);
+  if (!row) { showVoiceToast(`שאלה ${qNum} לא נמצאה`); return; }
+
+  const btn = row.querySelector(`.opt-btn[data-val="${ansNum}"]`);
+  if (btn) {
+    btn.click();
+    showVoiceToast(`✓ שאלה ${qNum} — ${ansNum}`);
+    // Scroll row into view
+    row.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
+}
+
+let _toastTimer = null;
+function showVoiceToast(msg) {
+  let toast = document.getElementById("voice-toast");
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "voice-toast";
+    toast.className = "voice-toast";
+    document.body.appendChild(toast);
+  }
+  toast.textContent = msg;
+  toast.classList.add("voice-toast--show");
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => toast.classList.remove("voice-toast--show"), 1800);
+}
+
+micBtn.addEventListener("click", toggleVoice);
 
 // ---------------------------------------------------------------------------
 // Boot
