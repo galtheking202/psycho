@@ -1446,9 +1446,42 @@ let _voiceActive = false;
 let _recognition  = null;
 const micBtn = $("mic-btn");
 
+// ---------------------------------------------------------------------------
+// Voice debug log
+// ---------------------------------------------------------------------------
+let _voiceLogEl = null;
+function getVoiceLog() {
+  if (!_voiceLogEl) {
+    _voiceLogEl = document.createElement("div");
+    _voiceLogEl.id = "voice-log";
+    _voiceLogEl.className = "voice-log";
+    _voiceLogEl.innerHTML = `
+      <div class="voice-log-header">
+        <span>🎤 קול — לוג</span>
+        <button class="voice-log-clear" onclick="document.getElementById('voice-log-entries').innerHTML=''">נקה</button>
+        <button class="voice-log-close" onclick="this.closest('#voice-log').remove(); window._voiceLogEl=null">✕</button>
+      </div>
+      <div id="voice-log-entries" class="voice-log-entries"></div>`;
+    document.body.appendChild(_voiceLogEl);
+  }
+  return document.getElementById("voice-log-entries");
+}
+
+function vlog(type, msg) {
+  const entries = getVoiceLog();
+  const row = document.createElement("div");
+  row.className = `vlog-row vlog-${type}`;
+  const time = new Date().toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  row.textContent = `[${time}] ${msg}`;
+  entries.prepend(row);
+  // Keep last 40 entries
+  while (entries.children.length > 40) entries.removeChild(entries.lastChild);
+}
+
 function toggleVoice() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) {
+    vlog("error", "SpeechRecognition API לא נתמך בדפדפן זה");
     showVoiceToast("זיהוי קול אינו נתמך בדפדפן זה");
     return;
   }
@@ -1456,6 +1489,7 @@ function toggleVoice() {
     _recognition?.stop();
     _voiceActive = false;
     micBtn.classList.remove("mic-active");
+    vlog("info", "מיקרופון כובה");
     showVoiceToast("מיקרופון כבוי");
     return;
   }
@@ -1466,19 +1500,27 @@ function toggleVoice() {
 
   _recognition.onresult = (ev) => {
     const transcript = ev.results[ev.results.length - 1][0].transcript.trim().toLowerCase();
+    const conf = (ev.results[ev.results.length - 1][0].confidence * 100).toFixed(0);
+    vlog("heard", `נשמע: "${transcript}" (${conf}%)`);
     handleVoiceCommand(transcript);
   };
-  _recognition.onerror = () => {
-    _voiceActive = false;
-    micBtn.classList.remove("mic-active");
+  _recognition.onerror = (ev) => {
+    vlog("error", `שגיאה: ${ev.error}`);
+    if (ev.error !== "no-speech") {
+      _voiceActive = false;
+      micBtn.classList.remove("mic-active");
+    }
   };
-  _recognition.onend = () => {
-    if (_voiceActive) _recognition.start(); // auto-restart
+  _recognition.onstart  = () => vlog("info", "מיקרופון מאזין...");
+  _recognition.onend    = () => {
+    vlog("info", "הפעלה הסתיימה" + (_voiceActive ? " — מפעיל מחדש" : ""));
+    if (_voiceActive) _recognition.start();
   };
 
   _recognition.start();
   _voiceActive = true;
   micBtn.classList.add("mic-active");
+  vlog("info", "מיקרופון הופעל (en-US, continuous)");
   showVoiceToast("מיקרופון פעיל");
 }
 
@@ -1493,29 +1535,36 @@ function stopVoice() {
 function handleVoiceCommand(transcript) {
   // PDF navigation
   if (/^(next|forward|next page)$/.test(transcript)) {
+    vlog("action", `פקודה: עמוד הבא`);
     navigatePdf(1); return;
   }
   if (/^(previous|prev|back|go back|prior|last page)$/.test(transcript)) {
+    vlog("action", `פקודה: עמוד קודם`);
     navigatePdf(-1); return;
   }
 
   // Answer selection: "[question number] [answer 1-4]"
-  // e.g. "sixteen four", "16 4", "twenty one 3"
   const tokens = transcript.replace(/-/g, ' ').trim().split(/\s+/);
   if (tokens.length >= 2) {
     const ansStr = tokens[tokens.length - 1];
     const qStr   = tokens.slice(0, -1).join(' ');
     const qNum   = wordsToNum(qStr);
     const ansNum = wordsToNum(ansStr);
+    vlog("parse", `פענוח: שאלה="${qStr}"→${qNum}, תשובה="${ansStr}"→${ansNum}`);
     if (qNum !== null && ansNum !== null && ansNum >= 1 && ansNum <= 4) {
       selectAnswerByVoice(qNum, ansNum);
+    } else {
+      vlog("warn", `לא זוהתה פקודה תקינה מ: "${transcript}"`);
     }
+  } else {
+    vlog("warn", `לא זוהתה פקודה: "${transcript}"`);
   }
 }
 
 function navigatePdf(delta) {
-  if (!state.pdfBaseUrl) return;
+  if (!state.pdfBaseUrl) { vlog("error", "pdfBaseUrl לא מוגדר"); return; }
   const cmd = delta > 0 ? 'next' : 'prev';
+  vlog("action", `שולח postMessage: {cmd:"${cmd}"} לעמוד ${state.pdfPage + delta}`);
   pdfFrame.contentWindow.postMessage({ cmd }, '*');
   showVoiceToast(delta > 0 ? 'עמוד הבא ←' : '→ עמוד קודם');
 }
@@ -1530,19 +1579,27 @@ function selectAnswerByVoice(qNum, ansNum) {
     ? state.simParts[state.simPartIdx].slot
     : null;
 
+  vlog("action", `בוחר שאלה ${qNum} תשובה ${ansNum} | slot=${slot || "כל החלקים"}`);
+
   const selector = slot
     ? `.question-row[data-slot="${CSS.escape(slot)}"][data-q="${qNum}"]`
     : `.question-row[data-q="${qNum}"]`;
 
   const row = answerSections.querySelector(selector);
-  if (!row) { showVoiceToast(`שאלה ${qNum} לא נמצאה`); return; }
+  if (!row) {
+    vlog("error", `שאלה ${qNum} לא נמצאה בDOM (selector: ${selector})`);
+    showVoiceToast(`שאלה ${qNum} לא נמצאה`);
+    return;
+  }
 
   const btn = row.querySelector(`.opt-btn[data-val="${ansNum}"]`);
   if (btn) {
     btn.click();
+    vlog("action", `✓ לחיצה על שאלה ${qNum} תשובה ${ansNum}`);
     showVoiceToast(`✓ שאלה ${qNum} — ${ansNum}`);
-    // Scroll row into view
     row.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  } else {
+    vlog("error", `כפתור תשובה ${ansNum} לא נמצא`);
   }
 }
 
