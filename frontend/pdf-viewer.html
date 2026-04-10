@@ -85,25 +85,30 @@
     async function renderPage(pageNum) {
       const page  = await pdfDoc.getPage(pageNum);
       const vp0   = page.getViewport({ scale: 1 });
-      // Fit page within viewport (leave small margin)
-      const scale = Math.min(
+      const dpr   = window.devicePixelRatio || 1;
+
+      // Fit page within viewport, then multiply by dpr for crisp rendering
+      const fitScale = Math.min(
         (window.innerWidth  - 8) / vp0.width,
         (window.innerHeight - 8) / vp0.height
       );
-      const viewport = page.getViewport({ scale });
+      const viewport = page.getViewport({ scale: fitScale * dpr });
 
       const wrap   = document.createElement('div');
       wrap.className = 'page-wrap';
 
       const canvas = document.createElement('canvas');
-      canvas.className   = 'pdf-page-canvas';
+      canvas.className    = 'pdf-page-canvas';
       canvas.dataset.page = pageNum;
+      // Physical pixels = viewport size; CSS pixels = divided by dpr
       canvas.width  = viewport.width;
       canvas.height = viewport.height;
+      canvas.style.width  = (viewport.width  / dpr) + 'px';
+      canvas.style.height = (viewport.height / dpr) + 'px';
 
       wrap.appendChild(canvas);
       document.body.insertBefore(wrap, navBar);
-      canvases[pageNum - 1] = wrap;   // scroll target is the wrap
+      canvases[pageNum - 1] = wrap;
 
       await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
     }
