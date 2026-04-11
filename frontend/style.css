@@ -106,6 +106,38 @@ html, body {
 .btn-grade:hover:not(:disabled) { background: var(--blue-light); }
 .btn-grade:disabled { opacity: .45; cursor: not-allowed; }
 
+.btn-timer {
+  height: 36px;
+  padding: 0 14px;
+  background: var(--green);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background .15s;
+  white-space: nowrap;
+}
+.btn-timer:hover:not(:disabled) { background: #15803d; }
+.btn-timer:disabled { opacity: .45; cursor: not-allowed; }
+
+.timer-display {
+  font-size: 22px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--gray-800);
+  letter-spacing: 1px;
+  min-width: 58px;
+  text-align: center;
+}
+.timer-display.timer-warn   { color: #fb923c; }
+.timer-display.timer-urgent { color: var(--red); animation: pulse-text 1s ease-in-out infinite; }
+@keyframes pulse-text {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: .5; }
+}
+
 .btn-stats {
   height: 36px;
   padding: 0 14px;

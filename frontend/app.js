@@ -27,6 +27,12 @@ const state = {
   // Time tracking (per part)
   answerLog: [],   // [{slot,q,val,partElapsed_ms,sectionName,partLabel,partIdx}]
   partTimes: [],   // [total_ms_used_per_part]  indexed by part
+
+  // Regular mode timer
+  timerActive:    false,
+  timerCountdown: SIM_PART_SECONDS,
+  timerInterval:  null,
+  timerStart:     null,
 };
 
 // ---------------------------------------------------------------------------
@@ -57,6 +63,8 @@ const simBarPart       = $("sim-bar-part");
 const simCountdownEl   = $("sim-countdown");
 const simFooter        = $("sim-footer");
 const simSubmitBtn     = $("sim-submit-btn");
+const timerBtn         = $("timer-btn");
+const timerDisplay     = $("timer-display");
 
 // Auth / Stats DOM refs
 const authBtn          = $("auth-btn");
@@ -155,6 +163,9 @@ async function loadPdf(id) {
   gradeBtn.disabled  = true;
   simToggle.disabled = true;
   progressBadge.classList.add("hidden");
+  timerBtn.classList.add("hidden");
+  timerDisplay.classList.add("hidden");
+  stopRegularTimer();
 
   try {
     const key = await api(`/api/pdf/${encodeURIComponent(id)}/answers`);
@@ -171,7 +182,11 @@ async function loadPdf(id) {
       state.sessionStartedAt  = new Date().toISOString();
       buildFullPanel(key);
       updateProgress();
-      gradeBtn.disabled = false;
+      gradeBtn.disabled  = false;
+      timerBtn.disabled  = false;
+      timerBtn.classList.remove("hidden");
+      timerBtn.textContent = "⏱ התחל שעון";
+      timerDisplay.classList.add("hidden");
     }
   } catch (e) {
     panelLoading.classList.add("hidden");
@@ -364,6 +379,47 @@ async function gradeSimulation() {
 }
 
 // ---------------------------------------------------------------------------
+// Regular mode timer
+// ---------------------------------------------------------------------------
+timerBtn.addEventListener("click", () => {
+  if (state.timerActive) {
+    stopRegularTimer();
+  } else {
+    startRegularTimer();
+  }
+});
+
+function startRegularTimer() {
+  state.timerActive    = true;
+  state.timerCountdown = SIM_PART_SECONDS;
+  state.timerStart     = Date.now();
+  timerBtn.textContent = "עצור שעון";
+  timerDisplay.classList.remove("hidden");
+  renderRegularCountdown();
+  state.timerInterval = setInterval(() => {
+    state.timerCountdown = Math.max(0, state.timerCountdown - 1);
+    renderRegularCountdown();
+    if (state.timerCountdown === 0) stopRegularTimer();
+  }, 1000);
+}
+
+function stopRegularTimer() {
+  clearInterval(state.timerInterval);
+  state.timerInterval  = null;
+  state.timerActive    = false;
+  timerBtn.textContent = "⏱ התחל שעון";
+  timerDisplay.classList.add("hidden");
+}
+
+function renderRegularCountdown() {
+  const mm = String(Math.floor(state.timerCountdown / 60)).padStart(2, "0");
+  const ss = String(state.timerCountdown % 60).padStart(2, "0");
+  timerDisplay.textContent = `${mm}:${ss}`;
+  timerDisplay.classList.toggle("timer-warn",   state.timerCountdown <= 300 && state.timerCountdown > 60);
+  timerDisplay.classList.toggle("timer-urgent", state.timerCountdown <= 60);
+}
+
+// ---------------------------------------------------------------------------
 // Simulation: end / reset
 // ---------------------------------------------------------------------------
 function endSim(resetPanel) {
@@ -377,6 +433,7 @@ function endSim(resetPanel) {
 
   simBar.classList.add("hidden");
   simFooter.classList.add("hidden");
+  stopRegularTimer();
 
   simToggle.textContent = "⏱ סימולציה";
   simToggle.classList.toggle("active", state.simMode);
@@ -477,7 +534,7 @@ function onAnswer(slot, qNum, val, row, sectionName, partLabel) {
   if (!state.userAnswers[slot]) state.userAnswers[slot] = {};
   state.userAnswers[slot][qNum] = val;
 
-  // Log timing for simulation
+  // Log timing for simulation and regular mode (when timer is active)
   if (state.simActive && state.simPartStart !== null) {
     const partElapsed_ms = Date.now() - state.simPartStart;
     state.answerLog = state.answerLog.filter(e => !(e.slot === slot && e.q === qNum));
@@ -486,6 +543,15 @@ function onAnswer(slot, qNum, val, row, sectionName, partLabel) {
       partElapsed_ms,
       sectionName, partLabel,
       partIdx: state.simPartIdx,
+    });
+  } else if (state.timerActive && state.timerStart !== null) {
+    const partElapsed_ms = Date.now() - state.timerStart;
+    state.answerLog = state.answerLog.filter(e => !(e.slot === slot && e.q === qNum));
+    state.answerLog.push({
+      slot, q: qNum, val,
+      partElapsed_ms,
+      sectionName, partLabel,
+      partIdx: 0,
     });
   }
 
