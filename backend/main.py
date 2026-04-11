@@ -46,11 +46,25 @@ def name_to_id(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_")
 
 
+_SEASON_ORDER = {"spring": 1, "summer": 2, "autumn": 3, "winter": 4}
+
+def _test_sort_key(entry: dict):
+    parts = entry["name"].lower().split()
+    try:
+        year   = int(parts[1]) if len(parts) >= 2 else 0
+        season = _SEASON_ORDER.get(parts[0], 99) if parts else 99
+        return (year, season)
+    except (ValueError, IndexError):
+        return (0, 99)
+
+
 def load_tests() -> list[dict]:
     raw: list[dict] = json.loads(TESTS_PATH.read_text(encoding="utf-8"))
+    pdf_tests = [e for e in raw if e.get("url", "").lower().endswith(".pdf")]
+    pdf_tests.sort(key=_test_sort_key, reverse=True)   # newest first
     return [
         {"id": name_to_id(e["name"]), "name": e.get("name_he") or e["name"], "url": e["url"]}
-        for e in raw if e.get("url", "").lower().endswith(".pdf")
+        for e in pdf_tests
     ]
 
 
